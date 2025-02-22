@@ -62,84 +62,100 @@ with mp_hands.Hands(
                 ]
                 wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
 
-                # Convert wrist position to numpy array
-                current_wrist_position = np.array([wrist.x, wrist.y])
-
+                # Convert wrist position to a 3D numpy array (x, y, z)
+                current_wrist_position = np.array([wrist.x, wrist.y, wrist.z])
                 # Store recent wrist positions
                 wrist_positions.append(current_wrist_position)
 
-                # Check if fingers are open (tips should be significantly above PIP joints)
+                # Check if fingers are open (tip is significantly above the corresponding PIP joint)
                 open_fingers = sum(
                     hand_landmarks.landmark[tip].y < hand_landmarks.landmark[pip].y
                     for tip, pip in zip(finger_tips, finger_pips)
                 )
 
-                # Gesture classification
+                # Gesture classification based on number of open fingers and movement
                 if open_fingers == 2:  # Two fingers extended (conductor's gesture)
                     gesture = "Conductor's Gesture"
                     color = (255, 255, 0)
 
-                    # Check if conductor is moving
+                    # Check if conductor is moving by analyzing the 3D wrist trajectory
                     if len(wrist_positions) >= trajectory_length:
                         positions = np.array(wrist_positions)
-                        dx = positions[-1, 0] - positions[0, 0]
-                        dy = positions[-1, 1] - positions[0, 1]
-                        total_displacement = np.linalg.norm([dx, dy])
-
+                        # Compute the displacement vector (3D) from the start to the end of the trajectory
+                        displacement = positions[-1] - positions[0]
+                        total_displacement = np.linalg.norm(displacement)
                         if total_displacement > movement_threshold:
                             conductor_moving = True
                         else:
                             conductor_moving = False
 
-                elif open_fingers >= 3:  # Most fingers are extended
+                elif open_fingers >= 3:  # Most fingers are extended ("Open Palm")
                     conductor_moving = False
                     gesture = "Open Palm"
                     color = (0, 255, 0)  # Green
 
-                    # Ensure enough positions are recorded before checking movement
+                    # Only check movement if enough positions are recorded
                     if len(wrist_positions) >= trajectory_length:
-                        # Convert stored positions to NumPy array
                         positions = np.array(wrist_positions)
-
-                        # Compute the displacement vectors
-                        dx = positions[-1, 0] - positions[0, 0]
-                        dy = positions[-1, 1] - positions[0, 1]
-                        total_displacement = np.linalg.norm([dx, dy])
-
-                        # Compute curvature by checking if middle points deviate from a straight line
+                        displacement = positions[-1] - positions[0]
+                        total_displacement = np.linalg.norm(displacement)
+                        # Compute curvature: compare the actual mid-point of the trajectory with the expected mid-point (straight line)
                         mid_index = len(positions) // 2
                         mid_point = positions[mid_index]
-                        expected_mid_x = (positions[0, 0] + positions[-1, 0]) / 2
-                        expected_mid_y = (positions[0, 1] + positions[-1, 1]) / 2
-                        curvature = np.linalg.norm(mid_point - np.array([expected_mid_x, expected_mid_y]))
+                        expected_mid = (positions[0] + positions[-1]) / 2
+                        curvature = np.linalg.norm(mid_point - expected_mid)
 
-                        # If the movement is large enough and curved, classify as semi-circular motion
                         if total_displacement > movement_threshold and curvature > curvature_threshold:
                             gesture = "Semi-Circular Motion"
                             color = (255, 0, 0)  # Blue
 
-                else:  # Fingers are curled
+                else:  # Fist (fingers are curled)
                     conductor_moving = False
                     gesture = "Fist"
                     color = (0, 0, 255)  # Red
                     wrist_positions.clear()  # Reset trajectory when a fist is detected
 
-                    # If the previous gesture was a semi-circular motion, trigger message display
+                    # If the previous gesture was semi-circular motion, trigger the message display
                     if last_gesture == "Semi-Circular Motion":
                         display_message = True
                         message_timer = time.time()  # Start timer
 
-                # Update last detected gesture
+                # Update the last detected gesture
                 last_gesture = gesture
 
-                # Display the detected gesture
+                # Display the detected gesture on the frame
                 cv2.putText(frame, gesture, (50, 50),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
 
-                # Display conductor movement
+                # Optionally display an indicator if the conductor is moving
                 if conductor_moving:
                     cv2.putText(frame, "Conductor Moving", (50, 100),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3, cv2.LINE_AA)
+
+        # Outside the hand landmarks loop, display the motion vector in the top right corner
+        if len(wrist_positions) >= trajectory_length:
+            positions = np.array(wrist_positions)
+            # Compute displacement from the first to the last recorded position
+            displacement = positions[-1] - positions[0]
+            dx, dy, dz = displacement
+            dz_scaled = 1000000 * dz
+
+            # Get frame dimensions to convert normalized coordinates to pixels
+            h, w, _ = frame.shape
+            margin = 100
+            # Define the arrow's starting point (top right corner, with some margin)
+            arrow_start = (w - margin, margin)
+            # Scale the normalized displacement for visualization purposes
+            factor = 300  # Adjust this factor based on your needs
+            arrow_end = (int(arrow_start[0] + dx * factor), int(arrow_start[1] + dy * factor))
+
+            # Draw the arrow representing the motion vector
+            cv2.arrowedLine(frame, arrow_start, arrow_end, (255, 255, 255), 2, tipLength=0.3)
+            # Display the numerical values of the displacement
+            cv2.putText(frame, f"dx: {dx:.3f}, dy: {dy:.3f}, dz: {dz_scaled:.3f}", (w - 450, margin + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+
 
         # Check if the message should be displayed
         if display_message:
