@@ -12,11 +12,12 @@ mp_drawing = mp.solutions.drawing_utils
 cap = cv2.VideoCapture(0)
 
 # Variables for movement tracking
-movement_threshold = 0.05  # Increased threshold to detect larger movements
-curvature_threshold = 0.05  # Increased required curvature for arc detection
-trajectory_length = 15  # Increased trajectory length for better smoothing
+movement_threshold = 0.03  # Adjusted for smoother movement detection
+curvature_threshold = 0.05  # Required curvature for arc detection
+trajectory_length = 10  # Tracks last N positions for smoother motion detection
 wrist_positions = deque(maxlen=trajectory_length)  # Stores last N wrist positions
 last_gesture = None  # Stores last detected gesture
+conductor_moving = False  # Flag for conductor's movement
 
 # Message display settings
 display_message = False
@@ -74,11 +75,24 @@ with mp_hands.Hands(
                 )
 
                 # Gesture classification
-                if open_fingers == 2: # Two fingers extended
+                if open_fingers == 2:  # Two fingers extended (conductor's gesture)
                     gesture = "Conductor's Gesture"
                     color = (255, 255, 0)
 
+                    # Check if conductor is moving
+                    if len(wrist_positions) >= trajectory_length:
+                        positions = np.array(wrist_positions)
+                        dx = positions[-1, 0] - positions[0, 0]
+                        dy = positions[-1, 1] - positions[0, 1]
+                        total_displacement = np.linalg.norm([dx, dy])
+
+                        if total_displacement > movement_threshold:
+                            conductor_moving = True
+                        else:
+                            conductor_moving = False
+
                 elif open_fingers >= 3:  # Most fingers are extended
+                    conductor_moving = False
                     gesture = "Open Palm"
                     color = (0, 255, 0)  # Green
 
@@ -105,6 +119,7 @@ with mp_hands.Hands(
                             color = (255, 0, 0)  # Blue
 
                 else:  # Fingers are curled
+                    conductor_moving = False
                     gesture = "Fist"
                     color = (0, 0, 255)  # Red
                     wrist_positions.clear()  # Reset trajectory when a fist is detected
@@ -120,6 +135,11 @@ with mp_hands.Hands(
                 # Display the detected gesture
                 cv2.putText(frame, gesture, (50, 50),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
+
+                # Display conductor movement
+                if conductor_moving:
+                    cv2.putText(frame, "Conductor Moving", (50, 100),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 255), 3, cv2.LINE_AA)
 
         # Check if the message should be displayed
         if display_message:
