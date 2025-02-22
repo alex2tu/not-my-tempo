@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import YouTubePlayer from '../components/YouTubePlayer';
 import WebcamFeed from '../components/WebcamFeed';
+import InfoButton from '@/components/InfoButton';
 
 export default function Home() {
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -85,8 +86,9 @@ export default function Home() {
           </button>
           <div className="text-center">
             <p>Detected</p>
-            <p className="font-bold">Gesture: {detectedGesture}</p>
+            <p>Gesture: <span className="font-bold">{detectedGesture}</span></p>
           </div>
+          <InfoButton />
         </div>
       </div>
     </div>
